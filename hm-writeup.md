@@ -1,14 +1,16 @@
 # Healthmonitor (hm)
 
-
-There was a service called hm which was written in golang (go).
-The service contained a page to register and login. After login you could add your health metrics (weight, blood pressure, pulse, walking distance and a comment) and listed these. We looked at the database and saw some users have a flag in the comment.
-Our goal was to read comments from other users.
-If we registered and logged in we got some cookies: session, auth (which was obviously a md5 hash) and an id (which was a base64 decoded string "u_XXX", the user_id)
+First glance at Healthmonitor, called "hm", revealed a simple register/login procedure, hinting at a database. 
+Written in go(golang), with access to source code.
+After logging in, we could add health metrics (weight, blood pressure, pulse, walking distance and a comment) and list these.
+Comments were only visible to the respective users when logged in.
+The database showed several users having flags as comments.
+Our goal was to read comments from other users from within one active.
+While registered and logged in we got some cookies: session, auth (which was obviously a md5 hash) and an id (which was a base64 decoded string "u_XXX", the user_id)
 
 ## fixed key
 
-First we read the main.go which showed a constant key. And since every team had the same image every team had the same key. This constant key was used for the auth cookie generation:
+Our go-to (obvious pun intended) was to look at main.go which showed a constant key. And since every team had the same vbox image, every team had to have the same key. This constant key was used for the auth cookie generation:
 
 e.g. the auth-verifier
 ~~~
@@ -23,13 +25,13 @@ func authVerified(auth string, uId string) (bool, error) {
 }
 ~~~
 
-We could see that you only had to know the uID and the key to calculate the auth-cookie. Since every key on every image was the same, you could easily exploit it.
-Things to do:
+We could see that you only had to know the uID and the key to calculate the auth-cookie. Since every key on every image was the same, we could easily exploit it.
+Course of action, accordingly, was:
 
 1. Register a user to get the highest uID
 2. Change the uID, calculate the md5hash for the new auth-cookie and send a request to read your health metrics
 
-The best solution was that you decreased the uID and submit your flags until no valid flags were left.
+The best solution was to decrease the uID and submit flags until no valid flags were left.
 
 Quick & Dirty exploit
 (python)
@@ -59,17 +61,18 @@ while(uid > uidorig - 100): #here you could improve the exploit
 	print r.text #our submitter greps the flags
 ~~~
 
-To fix the flaw you could just change the key and recompiled it. (# go build)
+To fix the flaw we just changed the key and recompiled it. (# go build)
 
 ## hash length extension
 
-This was the most obvious flaw and we did not look or think further. But there was more and probably many team were just as lazy as we were and just changed the key and were still vulnerable to a hash length extension attack. Since auth was calculated via `md5(key, id)`, and the id was user provided we could provide arbitrary data. 
+This was the most obvious flaw and we did not look or think further. But there was more and other teams were probably just as lazy as we were and just changed the key and were still vulnerable to a hash length extension attack. Since auth was calculated via `md5(key, id)`, and the id was user provided we could provide arbitrary data. 
 
 If you're doing a lot of CTFs you are probably familiar with hash extension if not the best thing to start is by reading [this blog post](https://blog.skullsecurity.org/2012/everything-you-need-to-know-about-hash-length-extension-attacks) and playing around with [hash_extender](https://github.com/iagox86/hash_extender) 
 
-If you are lazy and don't want to read up here is the short version: Merkel-Damgard Hashes like MD5 and SHA1/SHA2 are vulnerable to hash length extension attacks. This attacks allows you to recalculate hashes that are build up like the one above `hash(secret, user-provided-data)`. You could than just append more data and calculate a corresponding hash without knowledge of the secret. 
+If you are lazy and don't want to read up here is the short version: Merkel-Damgard Hashes like MD5 and SHA1/SHA2 are vulnerable to hash length extension attacks. This attacks allows you to recalculate hashes that are built like the one above `hash(secret, user-provided-data)`. You could than just append more data and calculate a corresponding hash without knowledge of the secret. 
 
-To make this work there still had to be some features in the code. To attack the flaw you need to change the base64 encoded user id and the auth token. And you could only append data to the user id not change it. But these features are provided. To check for the auth cookie is done in getUserId:
+To make this work there still had to be some features in the code. To exploit the flaw you'd need to change the base64 encoded user id and the auth token. You could only append data to the user id, not change it, but these features were provided. 
+The check for the auth cookie is done in getUserId:
 
 ~~~
 auth := authCookie.Value
@@ -90,9 +93,11 @@ func split(c rune) bool {
 	return c == ';' || c == ' ' 
 }
 ~~~
-so we can just append the new user id after a ; and can trigger a valid authentication for that user. The only reaming problem is we do not know the length of the secret which we need to calculate our new auth token. But hash extender can generate multiple tokens at once with varying secret length.
+so we can just append the new user id after a ; and can trigger a valid authentication for that user. 
 
-So here is a pseudo code writeup after a POC with burp a was to lazy to actually automate it with python... 
+The only remaining problem is we do not know the length of the secret which we need to calculate our new auth token, but hash extender can generate multiple tokens at once with varying secret length.
+
+So here is a pseudo code writeup after a POC with burp as we were too lazy to actually automate it with python... 
 
 1. Create new user
 2. bruteforce secret length for id - 1
@@ -102,10 +107,10 @@ To fix this properly you should apply a HMAC instead of `md5(secret+data)` but i
 
 
 ## SQL injection
-But there was still more. Most database queries used prepared statements except the one that checked if a user name already exists. 
+But still, there was more. Most database queries used prepared statements except the one that checked if a user name already existed. 
 
-To fix this flaw simple make the query to a prepared statement just like the rest.
+To fix this flaw simply change the query to a prepared statement just like the rest.
 
 ## Summary
 
-We dind't expect that may flaws in one service and only exploited and fixed one. But still this service was our cash cow and we were able to score good points, but the next time we will take a second look and fix and exploit more vulnerabilities. 
+We didn't expect that may flaws in just one service and only exploited and fixed one. But still this service was our cash cow and we were able to score good points, but the next time we will take a second look and fix and exploit more vulnerabilities. 
